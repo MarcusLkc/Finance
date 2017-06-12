@@ -1,0 +1,17 @@
+{% extends "layout.html" %}
+
+{% block title %}
+    Quote
+{% endblock %}
+
+{% block main %}
+    
+    
+    <form action="{{ url_for('quote') }}" class="form-inline" method="post">
+    <div class="form-group">
+      <label class="sr-only" for="symbol">symbol</label>
+      <input class="form-control" name="symbol" placeholder="symbol" type="text"/>
+  </div>
+  <button class="btn btn-default" type="submit">Search</button>
+</form>
+{% endblock %}
