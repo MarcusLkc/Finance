@@ -33,11 +33,13 @@ db = SQL("sqlite:///finance.db")
 @app.route("/")
 @login_required
 def index():
+    #Update User Stock Prices to match current Yahoo Prices
     
     stocks = db.execute("SELECT * FROM Stocks WHERE id = :id",id=session["user_id"])
     cash = db.execute("SELECT cash FROM users WHERE id = :id",id=session["user_id"])
     total_cash = 0
-
+    
+    #Cycle through stocks updating the price per each in database
     for stock in stocks:
         symbol = stock["symbol"]
         shares = stock["shares"]
@@ -49,11 +51,11 @@ def index():
                     price=usd(stock["price"]), \
                     total=usd(total), id=session["user_id"], symbol=symbol)
 
-# update user's cash in portfolio
+    # Get the user's current cach
     updated_cash = db.execute("SELECT cash FROM users \
                                WHERE id=:id", id=session["user_id"])
     
-    # update total cash -> cash + shares worth
+    # Total Cash combination of all of stocks values and cash on hand by user
     total_cash += updated_cash[0]["cash"]
     return render_template("index.html",stocks=stocks,cash=usd(cash[0]["cash"]),total= usd(total_cash))
 
@@ -63,6 +65,8 @@ def buy():
     """Buy shares of stock."""
     if request.method == "POST":
         shares = 0
+        
+        #check to seee if user is putting the right variables into input fields
         
         if not request.form.get("symbol") or not request.form.get("shares"):
             flash("Please remmember to fill both fields")
@@ -78,6 +82,9 @@ def buy():
             
             flash("Shares have to be a numeric value")
             return redirect(url_for("buy.html"))
+            
+        #lookup that stock's symbol from yahoo and find in database
+            
         stock = lookup(request.form.get("symbol"))
         if not stock:
             return apology("Share does not exist")
@@ -86,12 +93,19 @@ def buy():
         print(shares)
         if rows[0]["cash"] < cost:
             return apology("You don't have enough money for that =(")
+            
+            
+        #Update User's Cash
         
         db.execute("UPDATE Users SET cash = cash -:cost WHERE id = :id",cost=cost,id=session["user_id"])
+        
+        #Save purchase into history
         
         db.execute("INSERT INTO History(id,symbol,shares,price) VALUES(:id,:symbol,:shares,:price)",id=session["user_id"],symbol=stock["symbol"],shares=shares,price=usd(stock["price"]))
         
         current_shares = db.execute("SELECT SHARES FROM Stocks WHERE id = :id AND symbol = :symbol",id=session["user_id"],symbol=stock["symbol"])
+        
+        #If no current shares of that company create a new row in Stocks table for that User
         
         if not current_shares:
             
@@ -100,6 +114,8 @@ def buy():
             flash("Successfully bought")
             
             return redirect(url_for("index"))
+            
+        # if there is shares of that company just increment the current shares
         
         current_shares = current_shares[0]["shares"] + shares
         
@@ -112,8 +128,6 @@ def buy():
         
         
         
-            
-        
     
     return render_template("buy.html")
 
@@ -121,6 +135,8 @@ def buy():
 @login_required
 def history():
     """Show history of transactions."""
+    #Grab All the Users History from the Database
+    
     History = db.execute("SELECT * FROM History WHERE id = :id ORDER BY TransactionID DESC", id = session["user_id"])
     return render_template("history.html",History=History)
 
@@ -207,14 +223,24 @@ def register():
             return apology("passwords do not match")
         
         else:
-            
+            rows = db.execute("SELECT * FROM users WHERE username = :username", username=request.form.get("username"))
+
+            # ensure username exists and password is correct
+            if len(rows) == 1:
+                return apology("Username Already in use")
+    
           
             user = db.execute("INSERT INTO users(username,hash) VALUES(:username,:hash)",username=request.form.get("username"),hash=pwd_context.encrypt(request.form.get("password")))
             
             
             
+            # remember which user has logged in
+            session["user_id"] = user
+                
+            
+            
             flash(u'You were successfully registered now Get started with stocks')
-            return redirect(url_for("login"))
+            return redirect(url_for("index"))
         
 
     else:
@@ -224,6 +250,9 @@ def register():
 @login_required
 def sell():
     """Sell shares of stock."""
+    
+    #Similar to buy
+    
     if request.method == "POST":
         shares = 0
         
@@ -251,6 +280,8 @@ def sell():
         current_cash = db.execute("SELECT cash FROM users WHERE id = :id",id=session["user_id"])
         
         current_cash = current_cash[0]["cash"] + cost
+        
+        #Users without shares can not sell
         if not rows:
             return apology("You do not have this share")
         
@@ -265,6 +296,9 @@ def sell():
         current_shares = db.execute("SELECT SHARES FROM Stocks WHERE id = :id AND symbol = :symbol",id=session["user_id"],symbol=stock["symbol"])
         current_shares = current_shares[0]["shares"] - shares
         
+        
+        #If users end up with none of that share delete it from their Stocks
+        
         if current_shares == 0:
             
             db.execute("DELETE FROM Stocks WHERE id = :id AND symbol = :symbol",id=session["user_id"],symbol=stock["symbol"])
@@ -273,18 +307,58 @@ def sell():
             
             return redirect(url_for("index"))
         
-        
+        #If shares are above 0 just update the stocks object
         
         db.execute("UPDATE Stocks SET shares = :shares,price=:price,total=:total WHERE id=:id AND symbol = :symbol",shares=current_shares,price=stock["price"],total=usd(current_shares*stock["price"]),id=session["user_id"],symbol=stock["symbol"])
         
         flash("Sucessfully Sold Shares")
         
         return redirect(url_for("index"))
+    
+    return render_template("sell.html")
         
+
+@app.route("/loan", methods=["GET", "POST"])
+@login_required
+def loan():
+    
+    """Get a loan for users to purchase more stocks"""
+    
+    
+    if request.method == "POST":
+        loan_amount = 0
+        try:
+            loan_amount = int(request.form.get("loan"))
+            
+        except ValueError:
+            
+            return apology("Loan must be Positive Integers only")
+            
+        
+        if not loan_amount:
+            
+            return apologu("Please do not leave loan field blank")
+        
+        elif loan_amount < 0 or loan_amount > 10000:
+            
+            return apology("Please only use positive loan amounts less than $10,000")
+        
+        rows = db.execute("UPDATE users SET cash = cash + :loan_amount WHERE id=:id",loan_amount=loan_amount,id=session["user_id"])
+        
+        flash("Loan Successful")
+        
+        
+        
+        return redirect(url_for("index"))
+        
+        
+    
+    
+
         
         
         
             
         
     
-    return render_template("sell.html")
+    return render_template("loan.html")
