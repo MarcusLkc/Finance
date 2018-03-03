@@ -231,8 +231,7 @@ def register():
     
           
             user = db.execute("INSERT INTO users(username,hash) VALUES(:username,:hash)",username=request.form.get("username"),hash=pwd_context.encrypt(request.form.get("password")))
-            
-            
+           
             
             # remember which user has logged in
             session["user_id"] = user
@@ -347,18 +346,7 @@ def loan():
         
         flash("Loan Successful")
         
-        
-        
         return redirect(url_for("index"))
-        
-        
-    
-    
-
-        
-        
-        
-            
         
     
     return render_template("loan.html")
